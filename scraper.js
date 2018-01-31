@@ -29,6 +29,10 @@ class OddsFinderScraper {
       lovingBet: {
         name: 'LovingBet',
         region: 'Nigeria'
+      },
+      sportPesa: {
+        name: 'SportPesa',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -499,6 +503,7 @@ class OddsFinderScraper {
     })
   }
 
+  //parse BetPawa Matches
   parseBetPawaJSONMatches(match, service, region, league) {
     return new Promise((resolve, reject) => {
       let sport = "Soccer";
@@ -569,7 +574,9 @@ class OddsFinderScraper {
       });
     })
   }
+  //ends of parseBetPawaJSONMatches
 
+  //start crawling LovingBet Matches
   scrapeLovingBetPremierLeague() {
     return this.startLovingBetScraper('512', this.leagues.premierLeague);
   }
@@ -594,6 +601,7 @@ class OddsFinderScraper {
     return this.startLovingBetScraper('538', this.leagues.bundesliga);
   }
 
+  //start of LovingBetScraper
   startLovingBetScraper(leagueId, league) {
     return new Promise((resolve, reject) => {
       var options = {
@@ -627,7 +635,9 @@ class OddsFinderScraper {
       
     })
   }
+  //ends of startLovingBetScraper
 
+  //parsing LovingBetMatches
   parseLovingBetMatches($, val, service, region, league) {
     return new Promise((resolve, reject) => {
       let sport = "Soccer";
@@ -706,7 +716,151 @@ class OddsFinderScraper {
       })
     })
   }
+//ends of parseLovingBetMatches
+//ends of crawling LovingBet Matches
+ 
+//start crawling SportPesa matches
+  scrapeSportPesaPremierLeague() {
+    return this.startSportPesaScraper('67600', this.leagues.premierLeague);
+  }
 
+  scrapeSportPesaEFLCup() {
+    return this.startSportPesaScraper('76298', this.leagues.eflCup);
+  }
+
+  scrapeSportPesaLaLiga() {
+    return this.startSportPesaScraper('76837', this.leagues.laLiga);
+  }
+
+  scrapeSportPesaSerieA() {
+    return this.startSportPesaScraper('67358', this.leagues.serieA);
+  }
+
+  scrapeSportPesaLigue1() {
+    return this.startLovingBetScraper('76062', this.leagues.ligue1);
+  }
+
+  scrapeSportPesaBundesliga() {
+    return this.startSportPesaScraper('76390', this.leagues.bundesliga);
+  }
+
+  //start of SportPesaScraper
+  startSportPesaScraper(leagueId, league) {
+    return new Promise((resolve, reject) => {
+      var options = {
+        method: 'GET',
+        uri: 'https://www.sportpesa.co.ke/leaguegames?league='+leagueId+'&sportId=1&top=1',
+        transform: function (body) {
+            return cheerio.load(body);
+        }
+      };
+
+      rp(options)
+        .then($ => {
+          let matches = [];
+          $('.match.FOOTBALL.-.Games.for.this.league').each((ind, val) => {
+            matches.push(this.parseSportPesaMatches($, val, this.services.sportPesa.name, this.services.sportPesa.region, league));
+          })
+          Promise.all(matches)
+            .then(data => {
+              resolve();
+            })
+            .catch(err => {
+              reject(err);
+            });
+        })
+        .catch(err => {
+            reject(err);
+        });
+      
+    })
+  }
+  //ends of startSportPesaScraper
+
+  //parsing SportPesaMatches
+  parseSportPesaMatches($, val, service, region, league) {
+    return new Promise((resolve, reject) => {
+      let sport = "Soccer";
+      let team1 = $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
+      let team2 = $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
+      let dateString = $(val).find('ul.meta:nth-child(2) > li.date:nth-child(1) > timecomponent:nth-child(1)').attr('datetime').replace(/["']/g, "");
+      let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(dateString).getTime()).toLowerCase();
+      // console.log("team1 =>"+team1);
+      // console.log("team2 =>"+team2);
+      // console.log("date =>"+dateString);
+      // console.log("date ISO string =>"+new Date(dateString).toISOString());
+      // console.log("pseudokey =>"+psuedoKey);
+
+      Match.find({}, (err, matches) => {
+        let existing = this.findExisting(psuedoKey, matches);
+
+        if (existing && existing._doc.League === league) {
+          var matching = existing._doc.MatchInstances.find(el => {
+            return el._doc.Service === service;
+          })
+          if (typeof matching === 'undefined') {
+            existing._doc.MatchInstances.push({
+              PsuedoKey: psuedoKey,
+              Service: service,
+              Region: region,
+              Team1: {
+                Name: team1,
+                Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              },
+              Team2: {
+                Name: team2,
+                Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              },
+              DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            })
+
+            existing.markModified('MatchInstances');
+            
+            existing.save((err, updatedMatch) => {
+              if (err) {
+                console.log(err);
+                reject();
+              }
+              resolve(updatedMatch);
+            });
+          }
+        } else {
+          new Match({
+            PsuedoKey: psuedoKey,
+            Sport: sport,
+            League: league,
+            Date: new Date(dateString).toISOString(),
+            Team1: team1,
+            Team2: team2,
+            MatchInstances: [{
+              PsuedoKey: psuedoKey,
+              Service: service,
+              Region: region,
+              Team1: {
+                Name: team1,
+                Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              },
+              Team2: {
+                Name: team2,
+                Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              },
+              DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            }]
+          }).save((err, newMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(newMatch);
+          });
+        }
+      })
+    })
+  }
+//ends of parseSportPesaMatches
+//ends of crawling SportPesa Matches
+
+//finds if matches exists
   findExisting(psuedoKey, matches) {
     if (matches.length < 1) {
       return null;
@@ -746,7 +900,9 @@ class OddsFinderScraper {
            Math.abs(parseInt(keyDate) - parseInt(mostSimilar._doc.PsuedoKey.split('-')[2])) / 86400000 < 1 ? 
            mostSimilar : null;
   }
+  //ends of findExisting matches
 
+  //edit distance
   editDistance(s1, s2) {
     s1 = s1.toLowerCase();
     s2 = s2.toLowerCase();
@@ -773,7 +929,9 @@ class OddsFinderScraper {
     }
     return costs[s2.length];
   }
+  //ends of editDistance
 
+  // similarity
   similarity(s1, s2) {
     var longer = s1;
     var shorter = s2;
@@ -787,7 +945,12 @@ class OddsFinderScraper {
     }
     return (longerLength - this.editDistance(longer, shorter)) / parseFloat(longerLength);
   }
+  //ends of similarity
+
 }
+//ends of OddsFinderScraper class
+
+// crawling routes starts
 
 router.get('/startBetway', function(req, res) {
   oddsFinderScraper = new OddsFinderScraper();
@@ -1198,6 +1361,89 @@ router.get('/startLovingBetBundesliga', function(req, res) {
       res.json('{ success : false }');
     })
 })
+//SportPesa routes
+router.get('/startSportPesa', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaPremierLeague()
+  oddsFinderScraper.scrapeSportPesaEFLCup()
+  oddsFinderScraper.scrapeSportPesaLaLiga()
+  oddsFinderScraper.scrapeSportPesaSerieA()
+  oddsFinderScraper.scrapeSportPesaLigue1(),
+  oddsFinderScraper.scrapeSportPesaBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
 
+router.get('/startSportPesaPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startSportPesaEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startSportPesaLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startSportPesaLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startSportPesaSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/startSportPesaBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeSportPesaBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+//ends of crawling routes
 
 module.exports = router;
