@@ -37,6 +37,10 @@ class OddsFinderScraper {
       betIn: {
         name: 'BetIn',
         region: 'Kenya'
+      },
+      betika: {
+        name: 'Betika',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -1009,6 +1013,154 @@ parseBetInMatches($, val, service, region, league) {
 //ends of parseBetInMatches
 //ends of crawling BetIn Matches
 
+//start crawling Betika matches
+scrapeBetikaPremierLeague() {
+  return this.startBetikaScraper('222', this.leagues.premierLeague);
+}
+
+scrapeBetikaEFLCup() {
+  return this.startBetikaScraper('8398', this.leagues.eflCup);
+}
+
+scrapeBetikaLaLiga() {
+  return this.startBetikaScraper('14482', this.leagues.laLiga);
+}
+
+scrapeBetikaSerieA() {
+  return this.startBetikaScraper('182', this.leagues.serieA);
+}
+
+scrapeBetikaLigue1() {
+  return this.startBetikaScraper('209', this.leagues.ligue1);
+}
+
+scrapeBetikaBundesliga() {
+  return this.startBetikaScraper('214', this.leagues.bundesliga);
+}
+
+//start of BetikaScraper
+startBetikaScraper(leagueId, league) {
+  return new Promise((resolve, reject) => {
+    var options = {
+      method: 'GET',
+      uri: 'https://www.betika.com/competition?id='+leagueId,
+      transform: function (body) {
+          return cheerio.load(body);
+      }
+    };
+
+    rp(options)
+      .then($ => {
+        let matches = [];
+        let x =1;
+        //remove mobile classes
+        $('.col-sm-12.top-matches.mobi').remove();
+        $('.col-sm-12.top-matches').each((ind, val) => {
+          matches.push(this.parseBetikaMatches($, val, this.services.betika.name, this.services.betika.region, league));
+        })
+        Promise.all(matches)
+          .then(data => {
+            resolve();
+          })
+          .catch(err => {
+            reject(err);
+          });
+      })
+      .catch(err => {
+          reject(err);
+      });
+    
+  })
+}
+//ends of startBetikaScraper
+
+//parsing BetikaMatches
+parseBetikaMatches($, val, service, region, league) {
+  return new Promise((resolve, reject) => {
+    let sport = "Soccer";
+    let team1 = $(val).find('div:nth-child(3) > button > span.theteam').text().trim();
+    let team2 = $(val).find('div:nth-child(5) > button > span.theteam').text().trim();
+    let mtime  = $(val).find('div:nth-child(1)').text().split(' ')[1];
+    let mdate  = $(val).find('div:nth-child(1)').text().split(' ')[0];
+    let dateString =mdate+"/"+new Date().getFullYear()+" "+mtime;
+    let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(dateString).getTime()).toLowerCase();
+
+    // console.log("team1 =>"+team1);
+    // console.log("team2 =>"+team2);
+    // console.log("Match time =>"+mtime);
+    // console.log("date =>"+dateString);
+    // console.log("date ISO string =>"+new Date(dateString).toISOString());
+    // console.log("pseudokey =>"+psuedoKey);
+
+    Match.find({}, (err, matches) => {
+      let existing = this.findExisting(psuedoKey, matches);
+
+      if (existing && existing._doc.League === league) {
+        var matching = existing._doc.MatchInstances.find(el => {
+          return el._doc.Service === service;
+        })
+        if (typeof matching === 'undefined') {
+          existing._doc.MatchInstances.push({
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('div:nth-child(3) > button > span.theodds').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('div:nth-child(5)> button > span.theodds').text()
+            },
+            DrawPrice: $(val).find('div:nth-child(4) > button > span').text()
+          })
+
+          existing.markModified('MatchInstances');
+          
+          existing.save((err, updatedMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(updatedMatch);
+          });
+        }
+      } else {
+        new Match({
+          PsuedoKey: psuedoKey,
+          Sport: sport,
+          League: league,
+          Date: new Date(dateString).toISOString(),
+          Team1: team1,
+          Team2: team2,
+          MatchInstances: [{
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('div:nth-child(3) > button > span.theodds').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('div:nth-child(5)> button > span.theodds').text()
+            },
+            DrawPrice: $(val).find('div:nth-child(4) > button > span').text()
+          }]
+        }).save((err, newMatch) => {
+          if (err) {
+            console.log(err);
+            reject();
+          }
+          resolve(newMatch);
+        });
+      }
+    })
+  })
+}
+//ends of parseBetikaMatches
+//ends of crawling Betika Matches
+
 //finds if matches exists
   findExisting(psuedoKey, matches) {
     if (matches.length < 1) {
@@ -1669,6 +1821,90 @@ router.get('/startBetInSerieA', function(req, res) {
 router.get('/startBetInBundesliga', function(req, res) {
   oddsFinderScraper = new OddsFinderScraper();
   oddsFinderScraper.scrapeBetInBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+//Betika routes
+router.get('/startBetika', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaPremierLeague()
+  oddsFinderScraper.scrapeBetikaEFLCup()
+  oddsFinderScraper.scrapeBetikaLaLiga()
+  oddsFinderScraper.scrapeBetikaSerieA()
+  oddsFinderScraper.scrapeBetikaLigue1(),
+  oddsFinderScraper.scrapeBetikaBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetikaPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetikaEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetikaLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetikaLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetikaSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/startBetikaBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetikaBundesliga()
     .then(() => {
       res.json('{ success : true }');
     })
