@@ -33,6 +33,10 @@ class OddsFinderScraper {
       sportPesa: {
         name: 'SportPesa',
         region: 'Kenya'
+      },
+      betIn: {
+        name: 'BetIn',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -860,6 +864,151 @@ class OddsFinderScraper {
 //ends of parseSportPesaMatches
 //ends of crawling SportPesa Matches
 
+//start crawling BetIn matches
+scrapeBetInPremierLeague() {
+  return this.startBetInScraper('371', this.leagues.premierLeague);
+}
+
+scrapeBetInEFLCup() {
+  return this.startBetInScraper('102636', this.leagues.eflCup);
+}
+
+scrapeBetInLaLiga() {
+  return this.startBetInScraper('413', this.leagues.laLiga);
+}
+
+scrapeBetInSerieA() {
+  return this.startBetInScraper('67358', this.leagues.serieA);
+}
+
+scrapeBetInLigue1() {
+  return this.startBetInScraper('376', this.leagues.ligue1);
+}
+
+scrapeBetInBundesliga() {
+  return this.startBetInScraper('381', this.leagues.bundesliga);
+}
+
+//start of BetInScraper
+startBetInScraper(leagueId, league) {
+  return new Promise((resolve, reject) => {
+    var options = {
+      method: 'GET',
+      uri: 'https://web.betin.co.ke/Controls/OddsEventExt.aspx?showDate=1&showGQ=1&EventID='+leagueId,
+      transform: function (body) {
+          return cheerio.load(body);
+      }
+    };
+
+    rp(options)
+      .then($ => {
+        let matches = [];
+        let x =1;
+        $('.item').each((ind, val) => {
+          matches.push(this.parseBetInMatches($, val, this.services.betIn.name, this.services.betIn.region, league));
+        })
+        Promise.all(matches)
+          .then(data => {
+            resolve();
+          })
+          .catch(err => {
+            reject(err);
+          });
+      })
+      .catch(err => {
+          reject(err);
+      });
+    
+  })
+}
+//ends of startBetInScraper
+
+//parsing BetInMatches
+parseBetInMatches($, val, service, region, league) {
+  return new Promise((resolve, reject) => {
+    let sport = "Soccer";
+    let team1 = $(val).find('div.Event:nth-child(4)').text().split("-")[0].trim();
+    let team2 = $(val).find('div.Event:nth-child(4)').text().split("-")[1].trim();
+    let mtime  = $(val).find('div.Time:nth-child(3) > span:nth-child(1)').text();
+    let dateString = $(val).find('div.Time:nth-child(3) > span:nth-child(2)').text()+" "+new Date().getFullYear()+" "+mtime;
+    let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(dateString).getTime()).toLowerCase();
+
+    // console.log("team1 =>"+team1);
+    // console.log("team2 =>"+team2);
+    // console.log("Match time =>"+mtime);
+    // console.log("date =>"+dateString);
+    // console.log("date ISO string =>"+new Date(dateString).toISOString());
+    // console.log("pseudokey =>"+psuedoKey);
+
+    Match.find({}, (err, matches) => {
+      let existing = this.findExisting(psuedoKey, matches);
+
+      if (existing && existing._doc.League === league) {
+        var matching = existing._doc.MatchInstances.find(el => {
+          return el._doc.Service === service;
+        })
+        if (typeof matching === 'undefined') {
+          existing._doc.MatchInstances.push({
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+          })
+
+          existing.markModified('MatchInstances');
+          
+          existing.save((err, updatedMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(updatedMatch);
+          });
+        }
+      } else {
+        new Match({
+          PsuedoKey: psuedoKey,
+          Sport: sport,
+          League: league,
+          Date: new Date(dateString).toISOString(),
+          Team1: team1,
+          Team2: team2,
+          MatchInstances: [{
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+          }]
+        }).save((err, newMatch) => {
+          if (err) {
+            console.log(err);
+            reject();
+          }
+          resolve(newMatch);
+        });
+      }
+    })
+  })
+}
+//ends of parseBetInMatches
+//ends of crawling BetIn Matches
+
 //finds if matches exists
   findExisting(psuedoKey, matches) {
     if (matches.length < 1) {
@@ -1444,6 +1593,90 @@ router.get('/startSportPesaBundesliga', function(req, res) {
       res.json('{ success : false }');
     })
 })
+//BetIn routes
+router.get('/startBetIn', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInPremierLeague()
+  oddsFinderScraper.scrapeBetInEFLCup()
+  oddsFinderScraper.scrapeBetInLaLiga()
+  oddsFinderScraper.scrapeBetInSerieA()
+  oddsFinderScraper.scrapeBetInLigue1(),
+  oddsFinderScraper.scrapeBetInBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetInPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetInEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetInLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetInLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startBetInSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/startBetInBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeBetInBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
 //ends of crawling routes
 
 module.exports = router;
