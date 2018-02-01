@@ -954,13 +954,13 @@ parseBetInMatches($, val, service, region, league) {
             Region: region,
             Team1: {
               Name: team1,
-              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('div.odd.r1.c1.g1  > div:nth-child(2)').text()
             },
             Team2: {
               Name: team2,
-              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('div.odd.r1.c3.g1  > div:nth-child(2)').text()
             },
-            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            DrawPrice: $(val).find('div.odd.r1.c2.g1  > div:nth-child(2)').text()
           })
 
           existing.markModified('MatchInstances');
@@ -987,13 +987,13 @@ parseBetInMatches($, val, service, region, league) {
             Region: region,
             Team1: {
               Name: team1,
-              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('div.odd.r1.c1.g1  > div:nth-child(2)').text()
             },
             Team2: {
               Name: team2,
-              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('div.odd.r1.c3.g1  > div:nth-child(2)').text()
             },
-            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            DrawPrice: $(val).find('div.odd.r1.c2.g1  > div:nth-child(2)').text()
           }]
         }).save((err, newMatch) => {
           if (err) {
