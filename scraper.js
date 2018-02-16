@@ -41,6 +41,10 @@ class OddsFinderScraper {
       betika: {
         name: 'Betika',
         region: 'Kenya'
+      },
+      x1bet: {
+        name: '1xBet',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -1160,7 +1164,138 @@ parseBetikaMatches($, val, service, region, league) {
 }
 //ends of parseBetikaMatches
 //ends of crawling Betika Matches
+//start crawling 1xBet matches
+scrape1xBetPremierLeague() {
+  return this.start1xBetScraper('88637', this.leagues.premierLeague);
+}
 
+scrape1xBetEFLCup() {
+  return this.start1xBetScraper('119237', this.leagues.eflCup);
+}
+
+scrape1xBetLaLiga() {
+  return this.start1xBetScraper('127733', this.leagues.laLiga);
+}
+
+scrape1xBetSerieA() {
+  return this.start1xBetScraper('110163', this.leagues.serieA);
+}
+
+scrape1xBetLigue1() {
+  return this.start1xBetScraper('12821', this.leagues.ligue1);
+}
+
+scrape1xBetBundesliga() {
+  return this.start1xBetScraper('96463', this.leagues.bundesliga);
+}
+
+//start of 1xBetScraper
+start1xBetScraper(leagueId, league) {
+  return new Promise((resolve, reject) => {
+    var options = {
+      method: 'GET',
+      uri: 'https://1xbet.com/LineFeed/Get1x2_Zip?champs='+leagueId+'&sports=1&count=150&lng=en&mode=4&getEmpty=true',
+      json: true
+    };
+
+    rp(options)
+    .then(res => {
+      let matches = [];
+      for (let match of res.Value) {
+        if(typeof match.DI === 'undefined'){
+           matches.push(this.parse1xBetJSONMatches(match, this.services.x1bet.name, this.services.x1bet.region, league));
+        }
+      }
+      Promise.all(matches)
+        .then(data => {
+          resolve();
+        })
+        .catch(err => {
+          reject(err);
+        });
+    })
+    .catch(err => {
+        reject(err);
+    });
+    
+  })
+}
+//ends of start1xBetScraper
+
+  //parse 1xBet Matches
+  parse1xBetJSONMatches(match, service, region, league) {
+    return new Promise((resolve, reject) => {
+      let sport = "Soccer";
+      let psuedoKey = (match.O1.split(' ').join('') + '-' + match.O2.split(' ').join('') + '-' + new Date(match.S*1000).getTime()).toLowerCase();
+
+      Match.find({}, (err, matches) => {
+        let existing = this.findExisting(psuedoKey, matches);
+
+        if (existing) {
+          var matching = existing._doc.MatchInstances.find(el => {
+            return el._doc.Service === service;
+          })
+          if (typeof matching === 'undefined') {
+            existing._doc.MatchInstances.push({
+              PsuedoKey: psuedoKey,
+              Service: service,
+              Region: region,
+              Team1: {
+                Name: match.O1,
+                Price: match.E[0].C
+              },
+              Team2: {
+                Name: match.O2,
+                Price: match.E[2].C
+              },
+              DrawPrice: match.E[1].C
+            })
+
+            existing.markModified('MatchInstances');
+            
+            existing.save((err, updatedMatch) => {
+              if (err) {
+                console.log(err);
+                reject();
+              }
+              resolve(updatedMatch);
+            });
+          }
+        } else {
+          new Match({
+            PsuedoKey: psuedoKey,
+            Sport: sport,
+            League: league,
+            Date: new Date(match.S*1000).toISOString(),
+            Team1: match.O1,
+            Team2: match.O2,
+            MatchInstances: [{
+              PsuedoKey: psuedoKey,
+              Service: service,
+              Region: region,
+              Team1: {
+                Name: match.O1,
+                Price: match.E[0].C
+              },
+              Team2: {
+                Name: match.O2,
+                Price: match.E[2].C
+              },
+              DrawPrice: match.E[1].C
+            }]
+          }).save((err, newMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(newMatch);
+          });
+        }
+      });
+    })
+  }
+  //ends of parse1xBetJSONMatches
+//ends of crawling 1xBet Matches
 //finds if matches exists
   findExisting(psuedoKey, matches) {
     if (matches.length < 1) {
@@ -1913,6 +2048,89 @@ router.get('/startBetikaBundesliga', function(req, res) {
     })
 })
 
+//1xBet routes
+router.get('/start1xBet', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetPremierLeague()
+  oddsFinderScraper.scrape1xBetEFLCup()
+  oddsFinderScraper.scrape1xBetLaLiga()
+  oddsFinderScraper.scrape1xBetSerieA()
+  oddsFinderScraper.scrape1xBetLigue1(),
+  oddsFinderScraper.scrape1xBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/start1xBetPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/start1xBetEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/start1xBetLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/start1xBetLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/start1xBetSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/start1xBetBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrape1xBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
 //ends of crawling routes
 
 module.exports = router;
