@@ -1301,32 +1301,29 @@ start1xBetScraper(leagueId, league) {
   //ends of parse1xBetJSONMatches
 //ends of crawling 1xBet Matches
 
-// ################################################################################################
-
-
 //start crawling eliteBet matches
 scrapeEliteBetPremierLeague() {
-  return this.startEliteBetScraper('67600', this.leagues.premierLeague);
+  return this.startEliteBetScraper('(England Premier League > Regular Seaso)', this.leagues.premierLeague);
 }
 
 scrapeEliteBetEFLCup() {
-  return this.startEliteBetScraper('76298', this.leagues.eflCup);
+  return this.startEliteBetScraper('(England Championship > Regular Season)', this.leagues.eflCup);
 }
 
 scrapeEliteBetLaLiga() {
-  return this.startEliteBetScraper('76837', this.leagues.laLiga);
+  return this.startEliteBetScraper('(Spain Primera División > Regular Sea)', this.leagues.laLiga);
 }
 
 scrapeEliteBetSerieA() {
-  return this.startEliteBetScraper('67358', this.leagues.serieA);
+  return this.startEliteBetScraper('(Italy Serie A > Regular Season)', this.leagues.serieA);
 }
 
 scrapeEliteBetLigue1() {
-  return this.startEliteBetScraper('76062', this.leagues.ligue1);
+  return this.startEliteBetScraper('(France Ligue 1 > Regular Season)', this.leagues.ligue1);
 }
 
 scrapeEliteBetBundesliga() {
-  return this.startEliteBetScraper('76390', this.leagues.bundesliga);
+  return this.startEliteBetScraper('(Germany Bundesliga > Regular Season)', this.leagues.bundesliga);
 }
 
 //start of EliteBetScraper
@@ -1343,8 +1340,13 @@ startEliteBetScraper(leagueId, league) {
     rp(options)
       .then($ => {
         let matches = [];
-        $('.match.FOOTBALL.-.Games.for.this.league').each((ind, val) => {
-          matches.push(this.parseEliteBetMatches($, val, this.services.sportPesa.name, this.services.sportPesa.region, league));
+        $('tr').each((ind, val) => {
+          if(ind != 0){
+             let mLegueId = $(val).find('td:nth-child(3)').text().trim();
+              if(mLegueId == leagueId){
+                matches.push(this.parseEliteBetMatches($, val, this.services.eliteBet.name, this.services.eliteBet.region, league));
+              }
+          }
         })
         Promise.all(matches)
           .then(data => {
@@ -1366,14 +1368,18 @@ startEliteBetScraper(leagueId, league) {
 parseEliteBetMatches($, val, service, region, league) {
   return new Promise((resolve, reject) => {
     let sport = "Soccer";
-    let team1 = $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
-    let team2 = $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
-    let dateString = $(val).find('ul.meta:nth-child(2) > li.date:nth-child(1) > timecomponent:nth-child(1)').attr('datetime').replace(/["']/g, "");
-    let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(dateString).getTime()).toLowerCase();
+    let team1 = $(val).find('td:nth-child(4)').text().trim();
+    let team2 = $(val).find('td:nth-child(5)').text().trim();
+    let dateString = $(val).find('td:nth-child(2)').text().trim();
+    let a = dateString.split(' ')[0];
+    let b = a.split('.');
+    let mDate = b[1]+'.'+b[0]+'.'+b[2]+' '+dateString.split(' ')[1];
+    let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(mDate).getTime()).toLowerCase();
+
     // console.log("team1 =>"+team1);
     // console.log("team2 =>"+team2);
-    // console.log("date =>"+dateString);
-    // console.log("date ISO string =>"+new Date(dateString).toISOString());
+    // console.log("date =>"+mDate);
+    // console.log("date ISO string =>"+new Date(mDate).toISOString());
     // console.log("pseudokey =>"+psuedoKey);
 
     Match.find({}, (err, matches) => {
@@ -1390,13 +1396,13 @@ parseEliteBetMatches($, val, service, region, league) {
             Region: region,
             Team1: {
               Name: team1,
-              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('td:nth-child(6)').text()
             },
             Team2: {
               Name: team2,
-              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('td:nth-child(8)').text()
             },
-            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            DrawPrice: $(val).find('td:nth-child(7)').text()
           })
 
           existing.markModified('MatchInstances');
@@ -1414,7 +1420,7 @@ parseEliteBetMatches($, val, service, region, league) {
           PsuedoKey: psuedoKey,
           Sport: sport,
           League: league,
-          Date: new Date(dateString).toISOString(),
+          Date: new Date(mDate).toISOString(),
           Team1: team1,
           Team2: team2,
           MatchInstances: [{
@@ -1423,13 +1429,13 @@ parseEliteBetMatches($, val, service, region, league) {
             Region: region,
             Team1: {
               Name: team1,
-              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('td:nth-child(6)').text()
             },
             Team2: {
               Name: team2,
-              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+              Price: $(val).find('td:nth-child(8)').text()
             },
-            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            DrawPrice: $(val).find('td:nth-child(7)').text()
           }]
         }).save((err, newMatch) => {
           if (err) {
@@ -1444,8 +1450,6 @@ parseEliteBetMatches($, val, service, region, league) {
 }
 //ends of parseEliteBetMatches
 //ends of crawling EliteBet Matches
-
-// ################################################################################################
 
 
 //finds if matches exists
