@@ -328,27 +328,27 @@ class OddsFinderScraper {
   }
 
   scrapePrincessBetPremierLeague() {
-    return this.startPrincessBetScraper('58944', this.leagues.premierLeague);
+    return this.startPrincessBetScraper('56672', this.leagues.premierLeague);
   }
 
   scrapePrincessBetEFLCup() {
-    return this.startPrincessBetScraper('74303', this.leagues.eflCup);
+    return this.startPrincessBetScraper('71548', this.leagues.eflCup);
   }
 
   scrapePrincessBetLaLiga() {
-    return this.startPrincessBetScraper('59174', this.leagues.laLiga);
+    return this.startPrincessBetScraper('71535', this.leagues.laLiga);
   }
 
   scrapePrincessBetSerieA() {
-    return this.startPrincessBetScraper('59245', this.leagues.serieA);
+    return this.startPrincessBetScraper('56731', this.leagues.serieA);
   }
 
   scrapePrincessBetLigue1() {
-    return this.startPrincessBetScraper('58931', this.leagues.ligue1);
+    return this.startPrincessBetScraper('56681', this.leagues.ligue1);
   }
 
   scrapePrincessBetBundesliga() {
-    return this.startPrincessBetScraper('59390', this.leagues.bundesliga);
+    return this.startPrincessBetScraper('56728', this.leagues.bundesliga);
   }
 
   startPrincessBetScraper(leagueId, league) {
@@ -386,7 +386,7 @@ class OddsFinderScraper {
     return new Promise((resolve, reject) => {
       let sport = "Soccer";
       let odds = match.markets.find(el => {
-        return el.name === '3 Way ';
+        return el.name === '3 Way';
       });
       let psuedoKey = (match.team1.split(' ').join('') + '-' + match.team2.split(' ').join('') + '-' + new Date(match.date).getTime()).toLowerCase();
       Match.find({}, (err, matches) => {
