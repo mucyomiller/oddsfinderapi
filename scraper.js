@@ -45,6 +45,10 @@ class OddsFinderScraper {
       x1bet: {
         name: '1xBet',
         region: 'Kenya'
+      },
+      eliteBet: {
+        name: 'eliteBet',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -749,7 +753,7 @@ class OddsFinderScraper {
   }
 
   scrapeSportPesaLigue1() {
-    return this.startLovingBetScraper('76062', this.leagues.ligue1);
+    return this.startSportPesaScraper('76062', this.leagues.ligue1);
   }
 
   scrapeSportPesaBundesliga() {
@@ -1296,6 +1300,154 @@ start1xBetScraper(leagueId, league) {
   }
   //ends of parse1xBetJSONMatches
 //ends of crawling 1xBet Matches
+
+// ################################################################################################
+
+
+//start crawling eliteBet matches
+scrapeEliteBetPremierLeague() {
+  return this.startEliteBetScraper('67600', this.leagues.premierLeague);
+}
+
+scrapeEliteBetEFLCup() {
+  return this.startEliteBetScraper('76298', this.leagues.eflCup);
+}
+
+scrapeEliteBetLaLiga() {
+  return this.startEliteBetScraper('76837', this.leagues.laLiga);
+}
+
+scrapeEliteBetSerieA() {
+  return this.startEliteBetScraper('67358', this.leagues.serieA);
+}
+
+scrapeEliteBetLigue1() {
+  return this.startEliteBetScraper('76062', this.leagues.ligue1);
+}
+
+scrapeEliteBetBundesliga() {
+  return this.startEliteBetScraper('76390', this.leagues.bundesliga);
+}
+
+//start of EliteBetScraper
+startEliteBetScraper(leagueId, league) {
+  return new Promise((resolve, reject) => {
+    var options = {
+      method: 'GET',
+      uri: 'https://www.elitebetkenya.com/jackpot_thisweek.php',
+      transform: function (body) {
+          return cheerio.load(body);
+      }
+    };
+
+    rp(options)
+      .then($ => {
+        let matches = [];
+        $('.match.FOOTBALL.-.Games.for.this.league').each((ind, val) => {
+          matches.push(this.parseEliteBetMatches($, val, this.services.sportPesa.name, this.services.sportPesa.region, league));
+        })
+        Promise.all(matches)
+          .then(data => {
+            resolve();
+          })
+          .catch(err => {
+            reject(err);
+          });
+      })
+      .catch(err => {
+          reject(err);
+      });
+    
+  })
+}
+//ends of startEliteBetScraper
+
+//parsing EliteBetMatches
+parseEliteBetMatches($, val, service, region, league) {
+  return new Promise((resolve, reject) => {
+    let sport = "Soccer";
+    let team1 = $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
+    let team2 = $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.team:nth-child(1)').text().trim();
+    let dateString = $(val).find('ul.meta:nth-child(2) > li.date:nth-child(1) > timecomponent:nth-child(1)').attr('datetime').replace(/["']/g, "");
+    let psuedoKey = (team1.split(' ').join('') + '-' + team2.split(' ').join('') + '-' + new Date(dateString).getTime()).toLowerCase();
+    // console.log("team1 =>"+team1);
+    // console.log("team2 =>"+team2);
+    // console.log("date =>"+dateString);
+    // console.log("date ISO string =>"+new Date(dateString).toISOString());
+    // console.log("pseudokey =>"+psuedoKey);
+
+    Match.find({}, (err, matches) => {
+      let existing = this.findExisting(psuedoKey, matches);
+
+      if (existing && existing._doc.League === league) {
+        var matching = existing._doc.MatchInstances.find(el => {
+          return el._doc.Service === service;
+        })
+        if (typeof matching === 'undefined') {
+          existing._doc.MatchInstances.push({
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+          })
+
+          existing.markModified('MatchInstances');
+          
+          existing.save((err, updatedMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(updatedMatch);
+          });
+        }
+      } else {
+        new Match({
+          PsuedoKey: psuedoKey,
+          Sport: sport,
+          League: league,
+          Date: new Date(dateString).toISOString(),
+          Team1: team1,
+          Team2: team2,
+          MatchInstances: [{
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: team1,
+              Price: $(val).find('li.pick01 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            Team2: {
+              Name: team2,
+              Price: $(val).find('li.pick02 > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+            },
+            DrawPrice: $(val).find('li.pick0X > a.betting-button.pick-button:nth-child(1) > span.odd:nth-child(2)').text()
+          }]
+        }).save((err, newMatch) => {
+          if (err) {
+            console.log(err);
+            reject();
+          }
+          resolve(newMatch);
+        });
+      }
+    })
+  })
+}
+//ends of parseEliteBetMatches
+//ends of crawling EliteBet Matches
+
+// ################################################################################################
+
+
 //finds if matches exists
   findExisting(psuedoKey, matches) {
     if (matches.length < 1) {
@@ -2131,6 +2283,91 @@ router.get('/start1xBetBundesliga', function(req, res) {
       res.json('{ success : false }');
     })
 })
+
+//eliteBet routes
+router.get('/startEliteBet', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetPremierLeague()
+  oddsFinderScraper.scrapeEliteBetEFLCup()
+  oddsFinderScraper.scrapeEliteBetLaLiga()
+  oddsFinderScraper.scrapeEliteBetSerieA()
+  oddsFinderScraper.scrapeEliteBetLigue1(),
+  oddsFinderScraper.scrapeEliteBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startEliteBetPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startEliteBetEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startEliteBetLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startEliteBetLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startEliteBetSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/startEliteBetBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeEliteBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
 //ends of crawling routes
 
 module.exports = router;
