@@ -49,6 +49,10 @@ class OddsFinderScraper {
       eliteBet: {
         name: 'eliteBet',
         region: 'Kenya'
+      },
+      hollywoodBet: {
+        name: 'HollywoodBet',
+        region: 'Kenya'
       }
     }
     this.leagues = {
@@ -1451,6 +1455,199 @@ parseEliteBetMatches($, val, service, region, league) {
 //ends of parseEliteBetMatches
 //ends of crawling EliteBet Matches
 
+//start crawling HollywoodBet matches
+scrapeHollywoodBetPremierLeague() {
+  return this.startHollywoodBetScraper('291', this.leagues.premierLeague);
+}
+
+scrapeHollywoodBetEFLCup() {
+  return this.startHollywoodBetScraper('243', this.leagues.eflCup);
+}
+
+scrapeHollywoodBetLaLiga() {
+  return this.startHollywoodBetScraper('552', this.leagues.laLiga);
+}
+
+scrapeHollywoodBetSerieA() {
+  return this.startHollywoodBetScraper('567', this.leagues.serieA);
+}
+
+scrapeHollywoodBetLigue1() {
+  return this.startHollywoodBetScraper('494', this.leagues.ligue1);
+}
+
+scrapeHollywoodBetBundesliga() {
+  return this.startHollywoodBetScraper('363', this.leagues.bundesliga);
+}
+
+startHollywoodBetScraper(leagueId, league) {
+  return new Promise((resolve, reject) => {
+    var today = new Date();
+    var options = {
+      method: 'POST',
+      uri: 'https://hollywoodbets.com/Webservices/EventService.asmx/GetEvent',
+      body: {
+        tournamentId : leagueId,
+        date : (today.getFullYear()+1)+"-"+(today.getMonth()+1)+"-"+today.getDate()
+      },
+      json: true
+    };
+    rp(options)
+      .then(res => {
+        let resEvents = res.d.Result;
+        let matches = [];
+        // looping through matches(Events)
+        for (let event of resEvents){
+              let EventID = event.EventID;
+              var EventDateTime = event.EventDateTime;
+              //parsing date
+              var regxmatches = EventDateTime.match(/\((.*?)\)/);
+              if (regxmatches) {
+                  EventDateTime = regxmatches[1];
+              }else{
+                EventDateTime = new Date().getTime();
+              }
+
+              var options = {
+                method: 'POST',
+                uri: 'https://hollywoodbets.com/Webservices/EventService.asmx/GetEventBetType',
+                body: {
+                  eventId: EventID,
+                  sportId: 1,
+                },
+                json: true
+              };
+              //getting EventBetTypeMapID
+              rp(options)
+              .then(res => {
+                    let EventBetTypeMapID = res.d.Result[0].EventBetTypeMapID;
+                    var options = {
+                      method: 'POST',
+                      uri: 'https://hollywoodbets.com/Webservices/EventService.asmx/GetMatchPlayMarkets',
+                      body: {
+                        eventBetTypeMapId: EventBetTypeMapID,
+                      },
+                      json: true
+                    };
+                    //getting odds
+                    rp(options)
+                    .then(res => {
+                          let match = res.d.Result;
+                          matches.push(this.parseHollywoodBetJSONMatches(match,EventDateTime, this.services.hollywoodBet.name, this.services.hollywoodBet.region, league));
+                          //resolve those promises
+                          Promise.all(matches).then(data => {
+                              resolve();})
+                            .catch(err => {
+                              reject(err);
+                         });
+                  })               
+              })
+        }
+      })
+      .catch(err => {
+          reject(err);
+      });
+  })
+}
+
+//parse HollywoodBet Matches
+parseHollywoodBetJSONMatches(match,mTime,service, region, league) {
+  return new Promise((resolve, reject) => {
+    let sport = "Soccer";
+    let mTeam1Name = '';
+    let mTeam1Price = '';
+    let mTeam2Name = '';
+    let mTeam2Price = '';
+    let mDrawPrice = '';
+    for(let mMatch of match){
+      if(mMatch.EventDetailNumber == 1){
+        mTeam1Name = mMatch.EventDetailName;
+        mTeam1Price = mMatch.EventDetailOdd;
+      }
+      else if (mMatch.EventDetailNumber == 3){
+        mTeam2Name = mMatch.EventDetailName;
+        mTeam2Price = mMatch.EventDetailOdd;
+      }else{
+          mDrawPrice = mMatch.EventDetailOdd;
+      }
+    }
+
+    let psuedoKey = (mTeam1Name.split(' ').join('') + '-' + mTeam2Name.split(' ').join('') + '-' + mTime).toLowerCase();
+    // console.log("Team 1 => "+mTeam1Name);
+    // console.log("Team 1 price => "+mTeam1Price);
+    // console.log("Team 2 => "+mTeam2Name);
+    // console.log("Team 2 price => "+mTeam2Price);
+    // console.log("Draw price => "+mDrawPrice);
+    // console.log("psuedoKey => "+psuedoKey);
+    // console.log(new Date(+mTime));
+    Match.find({}, (err, matches) => {
+      let existing = this.findExisting(psuedoKey, matches);
+
+      if (existing) {
+        var matching = existing._doc.MatchInstances.find(el => {
+          return el._doc.Service === service;
+        })
+        if (typeof matching === 'undefined') {
+          existing._doc.MatchInstances.push({
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: mTeam1Name,
+              Price: mTeam1Price
+            },
+            Team2: {
+              Name: mTeam2Name,
+              Price: mTeam2Price
+            },
+            DrawPrice: mDrawPrice
+          })
+
+          existing.markModified('MatchInstances');
+          
+          existing.save((err, updatedMatch) => {
+            if (err) {
+              console.log(err);
+              reject();
+            }
+            resolve(updatedMatch);
+          });
+        }
+      } else {
+
+        new Match({
+          PsuedoKey: psuedoKey,
+          Sport: sport,
+          League: league,
+          Date: new Date(+mTime).toISOString(),
+          Team1: mTeam1Name,
+          Team2: mTeam2Name,
+          MatchInstances: [{
+            PsuedoKey: psuedoKey,
+            Service: service,
+            Region: region,
+            Team1: {
+              Name: mTeam1Name,
+              Price: mTeam1Price
+            },
+            Team2: {
+              Name: mTeam2Name,
+              Price: mTeam2Price
+            },
+            DrawPrice: mDrawPrice
+          }]
+        }).save((err, newMatch) => {
+          if (err) {
+            console.log(err);
+            reject();
+          }
+          resolve(newMatch);
+        });
+      }
+    });
+  })
+}
+//ends of parseBetPawaJSONMatches
 
 //finds if matches exists
   findExisting(psuedoKey, matches) {
@@ -2372,6 +2569,90 @@ router.get('/startEliteBetBundesliga', function(req, res) {
     })
 })
 
+
+//HollywoodBet routes
+router.get('/startHollywoodBet', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetPremierLeague()
+  oddsFinderScraper.scrapeHollywoodBetEFLCup()
+  oddsFinderScraper.scrapeHollywoodBetLaLiga()
+  oddsFinderScraper.scrapeHollywoodBetSerieA()
+  oddsFinderScraper.scrapeHollywoodBetLigue1(),
+  oddsFinderScraper.scrapeHollywoodBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startHollywoodBetPremierLeague', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetPremierLeague()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startHollywoodBetEFLCup', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetEFLCup()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startHollywoodBetLaLiga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetLaLiga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startHollywoodBetLigue1', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetLigue1()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+router.get('/startHollywoodBetSerieA', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetSerieA()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
+
+
+router.get('/startHollywoodBetBundesliga', function(req, res) {
+  oddsFinderScraper = new OddsFinderScraper();
+  oddsFinderScraper.scrapeHollywoodBetBundesliga()
+    .then(() => {
+      res.json('{ success : true }');
+    })
+    .catch((err) => {
+      res.json('{ success : false }');
+    })
+})
 //ends of crawling routes
 
 module.exports = router;
